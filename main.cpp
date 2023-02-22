@@ -31,11 +31,11 @@ private:
     std::mutex queue_mutex_;
     std::condition_variable condition_;
     bool stop_;
-    int c_queue_size;
 
 private:
-    std::function<void()> createRegularThread() {
-        return [this] {
+    std::function<void()> createRegularThread(const std::function<void()>& firstTask = {}) {
+        return [this, firstTask] {
+            firstTask();
             while (true) {
                 std::function<void()> task;
                 {
@@ -52,8 +52,9 @@ private:
         };
     }
 
-    std::function<void()> createTempThread() {
-        return [this] {
+    std::function<void()> createTempThread(const std::function<void()>& firstTask = {}) {
+        return [this, firstTask] {
+            firstTask();
             while (true) {
                 std::function<void()> task;
                 auto const timeout = std::chrono::steady_clock::now() + std::chrono::milliseconds(keepAliveTime);
@@ -77,7 +78,7 @@ private:
 public:
     ThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveTime, int queueSize) :
             corePoolSize(corePoolSize), maximumPoolSize(maximumPoolSize), keepAliveTime(keepAliveTime),
-            queueSize(queueSize), stop_(false), c_queue_size(0) {
+            queueSize(queueSize), stop_(false) {
     }
 
     ~ThreadPoolExecutor() {
@@ -86,30 +87,30 @@ public:
             stop_ = true;
         }
         condition_.notify_all();
-        for (std::thread &worker: threads_)
+        for (std::thread& worker: threads_)
             worker.join();
     }
 
     template<class F, class... Args>
-    void enqueue(F &&f, Args &&... args) {
+    void enqueue(F&& f, Args&& ... args) {
         {
+            std::function<void()> cfunc = std::bind(std::forward<F>(f), std::forward<Args>(args)...);
             std::unique_lock<std::mutex> lock(queue_mutex_);
             int c_thread_num = this->threads_.size();
             if (c_thread_num < corePoolSize) {
-                threads_.emplace_back(createRegularThread());
-            } else if (c_queue_size >= queueSize) {
+                threads_.emplace_back(createRegularThread(cfunc));
+            } else if (tasks_.size() >= queueSize) {
                 if (c_thread_num >= maximumPoolSize) {
                     // Reject policy
-                    std::cerr << "Rejected" << std::endl;
+                    std::cerr << "Rejected!" << std::endl;
                     return;
                 } else {
                     std::clog << "Adding temporary thread." << std::endl;
-                    threads_.emplace_back(createTempThread());
+                    threads_.emplace_back(createTempThread(cfunc));
                 }
             } else {
-                c_queue_size++;
+                tasks_.emplace(cfunc);
             }
-            tasks_.emplace(std::bind(std::forward<F>(f), std::forward<Args>(args)...));
         }
         condition_.notify_one();
     }
@@ -118,7 +119,7 @@ public:
 int main() {
     ThreadPoolExecutor pool(2, 4, 4000, 2);
     sleep(1);
-    for (int i = 0; i < 20; ++i) {
+    for (int i = 0; i < 9; i++) {
         std::cout << "Enqueue task " << i << std::endl;
         pool.enqueue([i] {
             std::cout << "Begin task " << i << std::endl;
