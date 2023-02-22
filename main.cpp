@@ -5,40 +5,82 @@
 #include <functional>
 #include <mutex>
 #include <condition_variable>
+
 #if _WIN32
+
 #include <windows.h>
+
+void sleep(float sec) {
+    Sleep(sec * 1000);
+}
+
 #else
 #include <unistd.h>
+void sleep(float sec) {
+    usleep(sec * 1000 * 1000);
+}
 #endif
 
 
-using namespace std;
+class ThreadPoolExecutor {
+private:
+    const int corePoolSize, maximumPoolSize, queueSize;
+    const long keepAliveTime;
+    std::vector<std::thread> threads_;
+    std::queue<std::function<void()>> tasks_;
+    std::mutex queue_mutex_;
+    std::condition_variable condition_;
+    bool stop_;
+    int c_queue_size;
 
-class ThreadPool {
-public:
-    ThreadPool(int thread_num) : stop_(false) {
-        for (int i = 0; i < thread_num; ++i) {
-            threads_.emplace_back(
-                    [this] {
-                        while (true) {
-                            std::function<void()> task;
-                            {
-                                std::unique_lock<std::mutex> lock(this->queue_mutex_);
-                                this->condition_.wait(lock,
-                                                      [this] { return this->stop_ || !this->tasks_.empty(); });
-                                if (this->stop_ && this->tasks_.empty())
-                                    return;
-                                task = std::move(this->tasks_.front());
-                                this->tasks_.pop();
-                            }
-                            task();
-                        }
-                    }
-            );
-        }
+private:
+    std::function<void()> createRegularThread() {
+        return [this] {
+            while (true) {
+                std::function<void()> task;
+                {
+                    std::unique_lock<std::mutex> lock(this->queue_mutex_);
+                    this->condition_.wait(lock,
+                                          [this] { return this->stop_ || !this->tasks_.empty(); });
+                    if (this->stop_ && this->tasks_.empty())
+                        return;
+                    task = std::move(this->tasks_.front());
+                    this->tasks_.pop();
+                }
+                task();
+            }
+        };
     }
 
-    ~ThreadPool() {
+    std::function<void()> createTempThread() {
+        return [this] {
+            while (true) {
+                std::function<void()> task;
+                auto const timeout = std::chrono::steady_clock::now() + std::chrono::milliseconds(keepAliveTime);
+                {
+                    std::unique_lock<std::mutex> lock(this->queue_mutex_);
+                    this->condition_.wait_for(lock, std::chrono::milliseconds(keepAliveTime),
+                                              [this] { return this->stop_ || !this->tasks_.empty(); });
+                    if (std::chrono::steady_clock::now() > timeout) {
+                        std::clog << "Timeout, temporary thread exited." << std::endl;
+                        return;
+                    } else if (this->stop_ && this->tasks_.empty())
+                        return;
+                    task = std::move(this->tasks_.front());
+                    this->tasks_.pop();
+                }
+                task();
+            }
+        };
+    }
+
+public:
+    ThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveTime, int queueSize) :
+            corePoolSize(corePoolSize), maximumPoolSize(maximumPoolSize), keepAliveTime(keepAliveTime),
+            queueSize(queueSize), stop_(false), c_queue_size(0) {
+    }
+
+    ~ThreadPoolExecutor() {
         {
             std::unique_lock<std::mutex> lock(queue_mutex_);
             stop_ = true;
@@ -52,31 +94,39 @@ public:
     void enqueue(F &&f, Args &&... args) {
         {
             std::unique_lock<std::mutex> lock(queue_mutex_);
+            int c_thread_num = this->threads_.size();
+            if (c_thread_num < corePoolSize) {
+                threads_.emplace_back(createRegularThread());
+            } else if (c_queue_size >= queueSize) {
+                if (c_thread_num >= maximumPoolSize) {
+                    // Reject policy
+                    std::cerr << "Rejected" << std::endl;
+                    return;
+                } else {
+                    std::clog << "Adding temporary thread." << std::endl;
+                    threads_.emplace_back(createTempThread());
+                }
+            } else {
+                c_queue_size++;
+            }
             tasks_.emplace(std::bind(std::forward<F>(f), std::forward<Args>(args)...));
         }
         condition_.notify_one();
     }
-
-private:
-    std::vector<std::thread> threads_;
-    std::queue<std::function<void()>> tasks_;
-    std::mutex queue_mutex_;
-    std::condition_variable condition_;
-    bool stop_;
 };
 
 int main() {
-    ThreadPool pool(4);
-    for (int i = 0; i < 8; ++i) {
+    ThreadPoolExecutor pool(2, 4, 4000, 2);
+    sleep(1);
+    for (int i = 0; i < 20; ++i) {
+        std::cout << "Enqueue task " << i << std::endl;
         pool.enqueue([i] {
-            cout << "Hello " << i << endl;
-#if _WIN32
-            Sleep(i * 1000);
-#else
-            usleep(i * 1000 * 1000);
-#endif
-            cout << "Bye " << i << endl;
+            std::cout << "Begin task " << i << std::endl;
+            sleep(3);
+            std::cout << "End task " << i << std::endl;
         });
+        sleep(0.5);
     }
+    sleep(10);
     return 0;
 }
