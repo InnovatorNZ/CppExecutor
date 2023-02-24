@@ -5,6 +5,7 @@
 #include <functional>
 #include <mutex>
 #include <condition_variable>
+#include <atomic>
 
 #if _WIN32
 
@@ -40,6 +41,7 @@ private:
     const int corePoolSize, maximumPoolSize, queueSize;
     const long keepAliveTime;
     RejectedExecutionHandler* rejectHandler;
+    std::atomic_int thread_cnt;
     std::vector<std::thread> threads_;
     std::deque<std::function<void()>> taskQueue;
     std::mutex task_queue_mutex, thread_queue_mutex;
@@ -140,7 +142,7 @@ private:
 public:
     ThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveTime, int queueSize, RejectedExecutionHandler* rejectHandler) :
             corePoolSize(corePoolSize), maximumPoolSize(maximumPoolSize), keepAliveTime(keepAliveTime),
-            queueSize(queueSize), rejectHandler(rejectHandler), stop_(false) {
+            queueSize(queueSize), rejectHandler(rejectHandler), stop_(false), thread_cnt(0) {
     }
 
     ~ThreadPoolExecutor() {
@@ -156,15 +158,17 @@ public:
     template<class F, class... Args>
     void enqueue(F&& f, Args&& ... args) {
         std::function<void()> cfunc = std::bind(std::forward<F>(f), std::forward<Args>(args)...);
-        task_queue_mutex.lock();
-        int c_thread_num = this->threads_.size();
-        if (c_thread_num < corePoolSize) {
-            task_queue_mutex.unlock();
-            std::thread regular_thread = std::thread(createRegularThread(cfunc));
-            {
-                std::unique_lock lock(this->thread_queue_mutex);
-                threads_.push_back(std::move(regular_thread));
+        //thread_queue_mutex.lock();
+        int c_thread_num;
+        while (true) {
+            c_thread_num = thread_cnt;
+            if (c_thread_num < corePoolSize) {
+                if (thread_cnt.compare_exchange_weak(c_thread_num, c_thread_num + 1))
+                    break;
             }
+        }
+        if (c_thread_num < corePoolSize) {
+            threads_.emplace_back(createRegularThread(cfunc));
         } else if (taskQueue.size() >= queueSize) {
             if (c_thread_num >= maximumPoolSize) {
                 task_queue_mutex.unlock();

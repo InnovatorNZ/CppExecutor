@@ -3,4 +3,4 @@ project(CppExecutor)
 
 set(CMAKE_CXX_STANDARD 17)
 
-add_executable(CppExecutor main.cpp)
+add_executable(CppExecutor main.cpp BlockingQueue.h)
