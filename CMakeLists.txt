@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.24)
 project(CppExecutor)
-
 set(CMAKE_CXX_STANDARD 17)
 
-add_executable(CppExecutor main.cpp BlockingQueue.h)
+include_directories(.)
+aux_source_directory("." SRCS)
+
+add_executable(CppExecutor ${SRCS} ${HDRS})
