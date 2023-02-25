@@ -3,6 +3,7 @@
 
 #include "BlockingQueue.h"
 #include <vector>
+#include <deque>
 #include <mutex>
 #include <condition_variable>
 #include <chrono>
@@ -11,7 +12,7 @@ template<typename T>
 class ArrayBlockingQueue : public BlockingQueue<T> {
 private:
     int max_size;
-    std::vector<T> items;
+    std::deque<T> items;
     std::mutex queue_mutex;
     std::condition_variable not_empty_condition;
     std::condition_variable not_full_condition;
