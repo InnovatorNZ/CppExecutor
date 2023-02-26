@@ -1,9 +1,11 @@
 #include <iostream>
 #include "ThreadPoolExecutor.h"
+#include "ArrayBlockingQueue.h"
 #include "sleep.h"
 
 int main() {
-    ThreadPoolExecutor pool(2, 4, 4000, 2, ThreadPoolExecutor::DiscardPolicy);
+    ThreadPoolExecutor pool(2, 4, 4000,
+                            new ArrayBlockingQueue<std::function<void()> >(2), ThreadPoolExecutor::DiscardPolicy);
     sleep(1);
     for (int i = 0; i < 9; i++) {
         std::cout << "Enqueue task " << i << std::endl;

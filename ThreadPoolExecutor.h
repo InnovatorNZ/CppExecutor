@@ -9,6 +9,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <atomic>
+#include "BlockingQueue.h"
 
 class RejectedExecutionException;
 
@@ -16,14 +17,13 @@ class RejectedExecutionHandler;
 
 class ThreadPoolExecutor {
 private:
-    const int corePoolSize, maximumPoolSize, queueSize;
+    const int corePoolSize, maximumPoolSize;
     const long keepAliveTime;
     RejectedExecutionHandler* rejectHandler;
     std::atomic_int thread_cnt;
     std::vector<std::thread> threads_;
-    std::deque<std::function<void()>> taskQueue;
-    std::mutex task_queue_mutex, thread_queue_mutex;
-    std::condition_variable condition_;
+    std::mutex thread_lock;
+    BlockingQueue<std::function<void()> >* workQueue;
     bool stop_;
 
 private:
@@ -48,8 +48,13 @@ private:
 
     void enqueue(const std::function<void()>& task);
 
+    bool addWorker(bool core, const std::function<void()>& firstTask = {});
+
+    void reject(const std::function<void()>& task);
+
 public:
-    ThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveTime, int queueSize, RejectedExecutionHandler* rejectHandler);
+    ThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveTime,
+                       BlockingQueue<std::function<void()> >* workQueue, RejectedExecutionHandler* rejectHandler);
 
     ~ThreadPoolExecutor();
 

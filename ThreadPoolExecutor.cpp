@@ -35,10 +35,8 @@ public:
 
     void rejectedExecution(const std::function<void()>& func, ThreadPoolExecutor* e) override {
         if (!e->isShutdown()) {
-            e->task_queue_mutex.lock();
-            e->taskQueue.pop_back();
-            e->taskQueue.push_back(func);
-            e->task_queue_mutex.unlock();
+            e->workQueue->poll();
+            e->workQueue->put(func);
         }
     }
 };
@@ -59,35 +57,28 @@ RejectedExecutionHandler* ThreadPoolExecutor::DiscardPolicy = new ThreadPoolExec
 RejectedExecutionHandler* ThreadPoolExecutor::CallerRunsPolicy = new ThreadPoolExecutor::CallerRunsPolicy_();
 RejectedExecutionHandler* ThreadPoolExecutor::DiscardOldestPolicy = new ThreadPoolExecutor::DiscardOldestPolicy_();
 
-ThreadPoolExecutor::ThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveTime, int queueSize,
-                                       RejectedExecutionHandler* rejectHandler) :
+ThreadPoolExecutor::ThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveTime,
+                                       BlockingQueue<std::function<void()> >* workQueue, RejectedExecutionHandler* rejectHandler) :
         corePoolSize(corePoolSize), maximumPoolSize(maximumPoolSize), keepAliveTime(keepAliveTime),
-        queueSize(queueSize), rejectHandler(rejectHandler), stop_(false), thread_cnt(0) {
+        workQueue(workQueue), rejectHandler(rejectHandler), stop_(false), thread_cnt(0) {
 }
 
 ThreadPoolExecutor::~ThreadPoolExecutor() {
-    {
-        std::unique_lock<std::mutex> lock(task_queue_mutex);
-        stop_ = true;
-    }
-    condition_.notify_all();
+    stop_ = true;
+    workQueue->close();
     for (std::thread& worker: threads_)
         worker.join();
+    delete workQueue;
 }
 
 std::function<void()> ThreadPoolExecutor::createRegularThread(const std::function<void()>& firstTask) {
     return [this, firstTask] {
         firstTask();
         while (true) {
-            std::function<void()> task;
-            {
-                std::unique_lock<std::mutex> lock(this->task_queue_mutex);
-                this->condition_.wait(lock,
-                                      [this] { return this->stop_ || !this->taskQueue.empty(); });
-                if (this->stop_ && this->taskQueue.empty())
-                    return;
-                task = std::move(this->taskQueue.front());
-                this->taskQueue.pop_front();
+            auto task = workQueue->take();
+            if (stop_ || task == nullptr) {
+                thread_cnt--;
+                return;
             }
             task();
         }
@@ -98,57 +89,60 @@ std::function<void()> ThreadPoolExecutor::createTempThread(const std::function<v
     return [this, firstTask] {
         firstTask();
         while (true) {
-            std::function<void()> task;
-            auto const timeout = std::chrono::steady_clock::now() + std::chrono::milliseconds(keepAliveTime);
-            {
-                std::unique_lock<std::mutex> lock(this->task_queue_mutex);
-                this->condition_.wait_for(lock, std::chrono::milliseconds(keepAliveTime),
-                                          [this] { return this->stop_ || !this->taskQueue.empty(); });
-                if (std::chrono::steady_clock::now() > timeout) {
-                    std::clog << "Timeout, temporary thread exited." << std::endl;
-                    return;
-                } else if (this->stop_ && this->taskQueue.empty())
-                    return;
-                task = std::move(this->taskQueue.front());
-                this->taskQueue.pop_front();
+            auto task = workQueue->poll(keepAliveTime);
+            if (stop_ || task == nullptr) {
+                thread_cnt--;
+                return;
             }
             task();
         }
     };
 }
 
-void ThreadPoolExecutor::enqueue(const std::function<void()>& task) {
-    //thread_queue_mutex.lock();
-    int c_thread_num;
+bool ThreadPoolExecutor::addWorker(bool core, const std::function<void()>& firstTask) {
     while (true) {
-        c_thread_num = thread_cnt;
-        if (c_thread_num < corePoolSize) {
-            if (thread_cnt.compare_exchange_weak(c_thread_num, c_thread_num + 1))
-                break;
-        }
-    }
-    if (c_thread_num < corePoolSize) {
-        threads_.emplace_back(createRegularThread(task));
-    } else if (taskQueue.size() >= queueSize) {
-        if (c_thread_num >= maximumPoolSize) {
-            task_queue_mutex.unlock();
-            std::cerr << "Reject policy triggered!" << std::endl;
-            this->rejectHandler->rejectedExecution(task, this);
-            return;
+        int c_thread_num = this->thread_cnt;
+        if (core) {
+            if (c_thread_num < corePoolSize) {
+                if (thread_cnt.compare_exchange_weak(c_thread_num, c_thread_num + 1))
+                    break;
+            } else {
+                return false;
+            }
         } else {
-            task_queue_mutex.unlock();
-            std::clog << "Adding temporary thread." << std::endl;
-            std::thread temp_thread = std::thread(createTempThread(task));
-            {
-                std::unique_lock lock(this->thread_queue_mutex);
-                threads_.push_back(std::move(temp_thread));
+            if (c_thread_num < maximumPoolSize) {
+                if (thread_cnt.compare_exchange_weak(c_thread_num, c_thread_num + 1))
+                    break;
+            } else {
+                return false;
             }
         }
-    } else {
-        taskQueue.emplace_back(task);
-        task_queue_mutex.unlock();
-        condition_.notify_one();
     }
+    if (core) {
+        std::thread th(createRegularThread(firstTask));
+        std::unique_lock lock(this->thread_lock);
+        this->threads_.emplace_back(std::move(th));
+    } else {
+        std::thread th(createTempThread(firstTask));
+        std::unique_lock lock(this->thread_lock);
+        this->threads_.emplace_back(std::move(th));
+    }
+    return true;
+}
+
+void ThreadPoolExecutor::enqueue(const std::function<void()>& task) {
+    if (thread_cnt < corePoolSize) {
+        if (addWorker(true, task)) return;
+    } else if (workQueue->offer(task)) {
+        if (thread_cnt == 0)
+            addWorker(false);
+    } else if (!addWorker(false, task)) {
+        reject(task);
+    }
+}
+
+void ThreadPoolExecutor::reject(const std::function<void()>& task) {
+    rejectHandler->rejectedExecution(task, this);
 }
 
 bool ThreadPoolExecutor::isShutdown() const {
