@@ -42,13 +42,13 @@ public:
     static RejectedExecutionHandler* DiscardOldestPolicy;
 
 private:
-    std::function<void()> createCoreThread(const std::function<void()>& firstTask = {});
+    std::function<void()> createCoreThread(const std::function<void()>& firstTask);
 
-    std::function<void()> createTempThread(const std::function<void()>& firstTask = {});
+    std::function<void()> createTempThread(const std::function<void()>& firstTask);
 
     void enqueue(const std::function<void()>& task);
 
-    bool addWorker(bool core, const std::function<void()>& firstTask = {});
+    bool addWorker(bool core, const std::function<void()>& firstTask = [] {});
 
     void reject(const std::function<void()>& task);
 

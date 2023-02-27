@@ -70,6 +70,7 @@ ThreadPoolExecutor::~ThreadPoolExecutor() {
     for (std::thread& worker: threads_)
         worker.join();
     delete workQueue;
+    workQueue = nullptr;
 }
 
 std::function<void()> ThreadPoolExecutor::createCoreThread(const std::function<void()>& firstTask) {
