@@ -16,6 +16,8 @@ class RejectedExecutionException;
 class RejectedExecutionHandler;
 
 class ThreadPoolExecutor {
+    friend class Test;
+
 private:
     const int corePoolSize, maximumPoolSize;
     const long keepAliveTime;

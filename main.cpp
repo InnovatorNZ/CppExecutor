@@ -1,46 +1,54 @@
 #include <iostream>
+#include <random>
 #include "ThreadPoolExecutor.h"
 #include "ArrayBlockingQueue.h"
 #include "sleep.h"
+#include "Test.h"
 
 using namespace std;
 
 int main() {
-
     {
         cout << "Single-thread test" << endl;
         ThreadPoolExecutor pool(2, 4, 3000,
-                                new ArrayBlockingQueue<std::function<void()> >(2), ThreadPoolExecutor::DiscardPolicy);
+                                new ArrayBlockingQueue<std::function<void()> >(2), ThreadPoolExecutor::DiscardOldestPolicy);
         sleep(1);
-        for (int i = 0; i < 9; i++) {
-            cout << "Enqueue task " << i << endl;
-            pool.execute([i] {
-                cout << "Begin task " << i << endl;
-                sleep(3);
-                cout << "End task " << i << endl;
-            });
-            sleep(0.5);
+        for (int _ = 0; _ < 2; _++) {
+            for (int i = 0; i < 9; i++) {
+                cout << "Enqueue task " << i << endl;
+                pool.execute([i] {
+                    cout << "Begin task " << i << endl;
+                    sleep(3);
+                    cout << "End task " << i << endl;
+                });
+                if (!Test::check(pool)) cerr << "ERROR: BUG DETECTED!" << endl;
+                sleep(0.5);
+            }
+            sleep(9);
         }
-        sleep(8);
     }
     cout << endl;
-
     {
         cout << "Multi-thread test" << endl;
-        ThreadPoolExecutor pool1(9, 9, 2500,
+        ThreadPoolExecutor pool1(15, 15, 0,
                                  new ArrayBlockingQueue<std::function<void()> >(0), ThreadPoolExecutor::DiscardPolicy);
-        ThreadPoolExecutor pool2(2, 4, 2500,
-                                 new ArrayBlockingQueue<std::function<void()> >(2), ThreadPoolExecutor::DiscardPolicy);
-        for (int i = 0; i < 9; i++) {
+        ThreadPoolExecutor pool2(32, 64, 100,
+                                 new ArrayBlockingQueue<std::function<void()> >(6), ThreadPoolExecutor::DiscardPolicy);
+        for (int i = 0; i < 15; i++) {
             pool1.execute([i, &pool2] {
-                for (int j = 0; j < 1; j++) {
+                std::mt19937 e(std::chrono::time_point_cast<std::chrono::milliseconds>(
+                        std::chrono::high_resolution_clock::now()).time_since_epoch().count());
+                normal_distribution<float> distribution(1, 0.2);
+                for (int j = 0; j < 10; j++) {
                     cout << "Enqueue task (" << i << "," << j << ")" << endl;
-                    pool2.execute([i, j] {
+                    float await_time = distribution(e);
+                    pool2.execute([i, j, await_time] {
                         cout << "Begin task (" << i << "," << j << ")" << endl;
-                        sleep(3);
+                        sleep(await_time);
                         cout << "End task (" << i << "," << j << ")" << endl;
                     });
-                    sleep(0.5);
+                    if (!Test::check(pool2)) cerr << "ERROR: BUG DETECTED!" << endl;
+                    sleep(0.25);
                 }
             });
         }
