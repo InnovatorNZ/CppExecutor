@@ -26,6 +26,7 @@ public:
     DiscardPolicy_() = default;
 
     void rejectedExecution(const std::function<void()>& func, ThreadPoolExecutor* e) override {
+        std::cerr << "Task rejected!" << std::endl;
     }
 };
 
@@ -60,7 +61,7 @@ RejectedExecutionHandler* ThreadPoolExecutor::DiscardOldestPolicy = new ThreadPo
 ThreadPoolExecutor::ThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveTime,
                                        BlockingQueue<std::function<void()> >* workQueue, RejectedExecutionHandler* rejectHandler) :
         corePoolSize(corePoolSize), maximumPoolSize(maximumPoolSize), keepAliveTime(keepAliveTime),
-        workQueue(workQueue), rejectHandler(rejectHandler), stop_(false), thread_cnt(0) {
+        workQueue(workQueue), rejectHandler(rejectHandler), thread_cnt(0), stop_(false) {
 }
 
 ThreadPoolExecutor::~ThreadPoolExecutor() {
@@ -71,7 +72,7 @@ ThreadPoolExecutor::~ThreadPoolExecutor() {
     delete workQueue;
 }
 
-std::function<void()> ThreadPoolExecutor::createRegularThread(const std::function<void()>& firstTask) {
+std::function<void()> ThreadPoolExecutor::createCoreThread(const std::function<void()>& firstTask) {
     return [this, firstTask] {
         firstTask();
         while (true) {
@@ -92,6 +93,7 @@ std::function<void()> ThreadPoolExecutor::createTempThread(const std::function<v
             auto task = workQueue->poll(keepAliveTime);
             if (stop_ || task == nullptr) {
                 thread_cnt--;
+                std::clog << "Temp thread exited." << std::endl;
                 return;
             }
             task();
@@ -119,7 +121,7 @@ bool ThreadPoolExecutor::addWorker(bool core, const std::function<void()>& first
         }
     }
     if (core) {
-        std::thread th(createRegularThread(firstTask));
+        std::thread th(createCoreThread(firstTask));
         std::unique_lock lock(this->thread_lock);
         this->threads_.emplace_back(std::move(th));
     } else {
@@ -131,8 +133,8 @@ bool ThreadPoolExecutor::addWorker(bool core, const std::function<void()>& first
 }
 
 void ThreadPoolExecutor::enqueue(const std::function<void()>& task) {
-    if (thread_cnt < corePoolSize) {
-        if (addWorker(true, task)) return;
+    if (thread_cnt < corePoolSize && addWorker(true, task)) {
+        return;
     } else if (workQueue->offer(task)) {
         if (thread_cnt == 0)
             addWorker(false);

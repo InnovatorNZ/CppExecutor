@@ -4,7 +4,7 @@
 #include "sleep.h"
 
 int main() {
-    ThreadPoolExecutor pool(2, 4, 4000,
+    ThreadPoolExecutor pool(2, 4, 3000,
                             new ArrayBlockingQueue<std::function<void()> >(2), ThreadPoolExecutor::DiscardPolicy);
     sleep(1);
     for (int i = 0; i < 9; i++) {
