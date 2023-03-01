@@ -12,19 +12,19 @@ int main() {
         cout << "Single-thread test" << endl;
         ThreadPoolExecutor pool(2, 4, 3000,
                                 new ArrayBlockingQueue<std::function<void()> >(2), ThreadPoolExecutor::DiscardOldestPolicy);
-        sleep(1);
+        _sleep(1);
         for (int _ = 0; _ < 2; _++) {
             for (int i = 0; i < 9; i++) {
                 cout << "Enqueue task " << i << endl;
                 pool.execute([i] {
                     cout << "Begin task " << i << endl;
-                    sleep(3);
+                    _sleep(3);
                     cout << "End task " << i << endl;
                 });
                 if (!Test::check(pool)) cerr << "ERROR: BUG DETECTED!" << endl;
-                sleep(0.5);
+                _sleep(0.5);
             }
-            sleep(9);
+            _sleep(9);
         }
     }
     cout << endl;
@@ -44,15 +44,15 @@ int main() {
                     float await_time = distribution(e);
                     pool2.execute([i, j, await_time] {
                         cout << "Begin task (" << i << "," << j << ")" << endl;
-                        sleep(await_time);
+                        _sleep(await_time);
                         cout << "End task (" << i << "," << j << ")" << endl;
                     });
                     if (!Test::check(pool2)) cerr << "ERROR: BUG DETECTED!" << endl;
-                    sleep(0.25);
+                    _sleep(0.25);
                 }
             });
         }
-        sleep(5);
+        _sleep(5);
     }
 
     return 0;

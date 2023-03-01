@@ -5,7 +5,7 @@
 
 #include <windows.h>
 
-void sleep(float sec) {
+void _sleep(float sec) {
     Sleep(sec * 1000);
 }
 
@@ -13,7 +13,7 @@ void sleep(float sec) {
 
 #include <unistd.h>
 
-void sleep(float sec) {
+void _sleep(float sec) {
     usleep(sec * 1000 * 1000);
 }
 
