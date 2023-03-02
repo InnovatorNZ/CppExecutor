@@ -59,9 +59,9 @@ RejectedExecutionHandler* ThreadPoolExecutor::CallerRunsPolicy = new ThreadPoolE
 RejectedExecutionHandler* ThreadPoolExecutor::DiscardOldestPolicy = new ThreadPoolExecutor::DiscardOldestPolicy_();
 
 ThreadPoolExecutor::ThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveTime,
-                                       BlockingQueue<std::function<void()> >* workQueue, RejectedExecutionHandler* rejectHandler) :
+                                       std::unique_ptr<BlockingQueue<std::function<void()> > > workQueue, RejectedExecutionHandler* rejectHandler) :
         corePoolSize(corePoolSize), maximumPoolSize(maximumPoolSize), keepAliveTime(keepAliveTime),
-        workQueue(workQueue), rejectHandler(rejectHandler), thread_cnt(0), stop_(false) {
+        workQueue(std::move(workQueue)), rejectHandler(rejectHandler), thread_cnt(0), stop_(false) {
 }
 
 ThreadPoolExecutor::~ThreadPoolExecutor() {
@@ -69,8 +69,6 @@ ThreadPoolExecutor::~ThreadPoolExecutor() {
     workQueue->close();
     for (std::thread& worker: threads_)
         worker.join();
-    delete workQueue;
-    workQueue = nullptr;
 }
 
 std::function<void()> ThreadPoolExecutor::createCoreThread(const std::function<void()>& firstTask) {

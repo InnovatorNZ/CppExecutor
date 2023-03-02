@@ -11,29 +11,30 @@ int main() {
     {
         cout << "Single-thread test" << endl;
         ThreadPoolExecutor pool(2, 4, 3000,
-                                new ArrayBlockingQueue<std::function<void()> >(2), ThreadPoolExecutor::DiscardOldestPolicy);
-        _sleep(1);
+                                std::make_unique<ArrayBlockingQueue<std::function<void()> > >(2),
+                                ThreadPoolExecutor::DiscardOldestPolicy);
+        __sleep(1);
         for (int _ = 0; _ < 2; _++) {
             for (int i = 0; i < 9; i++) {
                 cout << "Enqueue task " << i << endl;
                 pool.execute([i] {
                     cout << "Begin task " << i << endl;
-                    _sleep(3);
+                    __sleep(3);
                     cout << "End task " << i << endl;
                 });
                 if (!Test::check(pool)) cerr << "ERROR: BUG DETECTED!" << endl;
-                _sleep(0.5);
+                __sleep(0.5);
             }
-            _sleep(9);
+            __sleep(9);
         }
     }
     cout << endl;
     {
         cout << "Multi-thread test" << endl;
         ThreadPoolExecutor pool1(15, 15, 0,
-                                 new ArrayBlockingQueue<std::function<void()> >(0), ThreadPoolExecutor::DiscardPolicy);
-        ThreadPoolExecutor pool2(32, 64, 100,
-                                 new ArrayBlockingQueue<std::function<void()> >(6), ThreadPoolExecutor::DiscardPolicy);
+                                 std::make_unique<ArrayBlockingQueue<std::function<void()> > >(0), ThreadPoolExecutor::DiscardPolicy);
+        ThreadPoolExecutor pool2(32, 64, 200,
+                                 std::make_unique<ArrayBlockingQueue<std::function<void()> > >(6), ThreadPoolExecutor::DiscardPolicy);
         for (int i = 0; i < 15; i++) {
             pool1.execute([i, &pool2] {
                 std::mt19937 e(std::chrono::time_point_cast<std::chrono::milliseconds>(
@@ -44,16 +45,15 @@ int main() {
                     float await_time = distribution(e);
                     pool2.execute([i, j, await_time] {
                         cout << "Begin task (" << i << "," << j << ")" << endl;
-                        _sleep(await_time);
+                        __sleep(await_time);
                         cout << "End task (" << i << "," << j << ")" << endl;
                     });
                     if (!Test::check(pool2)) cerr << "ERROR: BUG DETECTED!" << endl;
-                    _sleep(0.25);
+                    __sleep(0.25);
                 }
             });
         }
-        _sleep(5);
+        __sleep(5);
     }
-
     return 0;
 }

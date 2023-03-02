@@ -49,11 +49,11 @@ public:
     }
 
     T poll() override {
+        std::unique_lock<std::mutex> lock(this->queue_mutex);
         if (items.empty()) return nullptr;
-        this->queue_mutex.lock();
         T ret = std::move(items.front());
         items.pop_front();
-        this->queue_mutex.unlock();
+        lock.unlock();
         not_full_condition.notify_one();
         return ret;
     }
