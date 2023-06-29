@@ -24,6 +24,8 @@ private:
     const long keepAliveTime;
     RejectedExecutionHandler* rejectHandler;
     std::atomic<int> thread_cnt;
+    std::atomic<int> working_cnt;
+    std::condition_variable complete_condition;
     std::vector<std::thread> threads_;
     std::mutex thread_lock;
     std::unique_ptr<BlockingQueue<std::function<void()> > > workQueue;
@@ -68,6 +70,8 @@ public:
     }
 
     bool isShutdown() const;
+
+    void BlockUntilTaskComplete();
 };
 
 

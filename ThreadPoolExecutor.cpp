@@ -73,14 +73,20 @@ ThreadPoolExecutor::~ThreadPoolExecutor() {
 
 std::function<void()> ThreadPoolExecutor::createCoreThread(const std::function<void()>& firstTask) {
     return [this, firstTask] {
+        working_cnt++;
         firstTask();
+        working_cnt--;
+        complete_condition.notify_all();
         while (true) {
             auto task = workQueue->take();
             if (stop_ || task == nullptr) {
                 thread_cnt--;
                 return;
             }
+            working_cnt++;
             task();
+            working_cnt--;
+            complete_condition.notify_all();
         }
     };
 }
@@ -98,6 +104,11 @@ std::function<void()> ThreadPoolExecutor::createTempThread(const std::function<v
             task();
         }
     };
+}
+
+void ThreadPoolExecutor::BlockUntilTaskComplete() {
+    std::this_thread::yield();
+    this->complete_condition.wait
 }
 
 bool ThreadPoolExecutor::addWorker(bool core, const std::function<void()>& firstTask) {
