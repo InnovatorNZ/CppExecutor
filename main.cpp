@@ -68,11 +68,11 @@ int main() {
                 cout << "Enqueue task " << j << endl;
                 pool.execute([j] {
                     cout << "Begin task " << j << endl;
-                    __sleep(3);
+                    // __sleep(3);
                     cout << "End task " << j << endl;
                 });
                 if (!Test::check(pool)) cerr << "ERROR: BUG DETECTED!" << endl;
-                __sleep(0.2);
+                // __sleep(0.2);
             }
             pool.waitForTaskComplete();
         }
