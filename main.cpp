@@ -55,5 +55,27 @@ int main() {
         }
         __sleep(5);
     }
+    cout << endl;
+
+    {
+        cout << "Wait until test" << endl;
+        ThreadPoolExecutor pool(2, 4, 3000,
+                                std::make_unique<ArrayBlockingQueue<std::function<void()> > >(2),
+                                ThreadPoolExecutor::DiscardOldestPolicy);
+        __sleep(1);
+        for (int i = 0; i < 3; i++) {
+            for (int j = 0; j < 6; j++) {
+                cout << "Enqueue task " << j << endl;
+                pool.execute([j] {
+                    cout << "Begin task " << j << endl;
+                    __sleep(3);
+                    cout << "End task " << j << endl;
+                });
+                if (!Test::check(pool)) cerr << "ERROR: BUG DETECTED!" << endl;
+                __sleep(0.2);
+            }
+            pool.waitForTaskComplete();
+        }
+    }
     return 0;
 }

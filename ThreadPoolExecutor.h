@@ -26,6 +26,7 @@ private:
     std::atomic<int> thread_cnt;
     std::atomic<int> working_cnt;
     std::condition_variable complete_condition;
+    std::mutex finish_mutex;
     std::vector<std::thread> threads_;
     std::mutex thread_lock;
     std::unique_ptr<BlockingQueue<std::function<void()> > > workQueue;
@@ -53,7 +54,7 @@ private:
 
     void enqueue(const std::function<void()>& task);
 
-    bool addWorker(bool core, const std::function<void()>& firstTask = [] {});
+    bool addWorker(bool core, const std::function<void()>& firstTask = nullptr);
 
     void reject(const std::function<void()>& task);
 
@@ -71,7 +72,7 @@ public:
 
     bool isShutdown() const;
 
-    void BlockUntilTaskComplete();
+    void waitForTaskComplete();
 };
 
 

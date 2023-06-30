@@ -67,16 +67,18 @@ ThreadPoolExecutor::ThreadPoolExecutor(int corePoolSize, int maximumPoolSize, lo
 ThreadPoolExecutor::~ThreadPoolExecutor() {
     stop_ = true;
     workQueue->close();
-    for (std::thread& worker: threads_)
+    for (std::thread& worker : threads_)
         worker.join();
 }
 
 std::function<void()> ThreadPoolExecutor::createCoreThread(const std::function<void()>& firstTask) {
     return [this, firstTask] {
-        working_cnt++;
-        firstTask();
-        working_cnt--;
-        complete_condition.notify_all();
+        if (firstTask != nullptr) {
+            working_cnt++;
+            firstTask();
+            working_cnt--;
+            complete_condition.notify_all();
+        }
         while (true) {
             auto task = workQueue->take();
             if (stop_ || task == nullptr) {
@@ -93,7 +95,12 @@ std::function<void()> ThreadPoolExecutor::createCoreThread(const std::function<v
 
 std::function<void()> ThreadPoolExecutor::createTempThread(const std::function<void()>& firstTask) {
     return [this, firstTask] {
-        firstTask();
+        if (firstTask != nullptr) {
+            working_cnt++;
+            firstTask();
+            working_cnt--;
+            complete_condition.notify_all();
+        }
         while (true) {
             auto task = workQueue->poll(keepAliveTime);
             if (stop_ || task == nullptr) {
@@ -101,14 +108,23 @@ std::function<void()> ThreadPoolExecutor::createTempThread(const std::function<v
                 std::clog << "Temp thread exited." << std::endl;
                 return;
             }
+            working_cnt++;
             task();
+            working_cnt--;
+            complete_condition.notify_all();
         }
     };
 }
 
-void ThreadPoolExecutor::BlockUntilTaskComplete() {
+void ThreadPoolExecutor::waitForTaskComplete() {
     std::this_thread::yield();
-    this->complete_condition.wait
+    while (true) {
+        std::unique_lock<std::mutex> lock(finish_mutex);
+        this->complete_condition.wait(lock, [this] { return working_cnt == 0 && workQueue->empty(); });
+        if (working_cnt == 0 && workQueue->empty()) {
+            return;
+        }
+    }
 }
 
 bool ThreadPoolExecutor::addWorker(bool core, const std::function<void()>& firstTask) {
