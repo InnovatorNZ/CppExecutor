@@ -11,6 +11,9 @@
 #include <atomic>
 #include <memory>
 #include "BlockingQueue.h"
+#if _WIN32
+#include <Windows.h>
+#endif
 
 class RejectedExecutionException;
 
@@ -73,6 +76,10 @@ public:
     bool isShutdown() const;
 
     void waitForTaskComplete();
+
+#if _WIN32
+    bool insidePool(DWORD);
+#endif
 };
 
 

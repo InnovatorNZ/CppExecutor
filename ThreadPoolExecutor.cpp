@@ -76,7 +76,10 @@ std::function<void()> ThreadPoolExecutor::createCoreThread(const std::function<v
         if (firstTask != nullptr) {
             working_cnt++;
             firstTask();
-            working_cnt--;
+            {
+                std::unique_lock<std::mutex> lock(finish_mutex);
+                working_cnt--;
+            }
             complete_condition.notify_all();
         }
         while (true) {
@@ -87,7 +90,10 @@ std::function<void()> ThreadPoolExecutor::createCoreThread(const std::function<v
             }
             working_cnt++;
             task();
-            working_cnt--;
+            {
+                std::unique_lock<std::mutex> lock(finish_mutex);
+                working_cnt--;
+            }
             complete_condition.notify_all();
         }
     };
@@ -98,7 +104,10 @@ std::function<void()> ThreadPoolExecutor::createTempThread(const std::function<v
         if (firstTask != nullptr) {
             working_cnt++;
             firstTask();
-            working_cnt--;
+            {
+                std::unique_lock<std::mutex> lock(finish_mutex);
+                working_cnt--;
+            }
             complete_condition.notify_all();
         }
         while (true) {
@@ -110,7 +119,10 @@ std::function<void()> ThreadPoolExecutor::createTempThread(const std::function<v
             }
             working_cnt++;
             task();
-            working_cnt--;
+            {
+                std::unique_lock<std::mutex> lock(finish_mutex);
+                working_cnt--;
+            }
             complete_condition.notify_all();
         }
     };
@@ -176,3 +188,15 @@ void ThreadPoolExecutor::reject(const std::function<void()>& task) {
 bool ThreadPoolExecutor::isShutdown() const {
     return this->stop_;
 }
+
+#if _WIN32
+bool ThreadPoolExecutor::insidePool(DWORD thID) {
+    for (int i = 0; i < threads_.size(); i++) {
+        if (threads_[i].joinable()) {
+            DWORD cthId = ::GetThreadId(static_cast<HANDLE>(threads_[i].native_handle()));
+            if (cthId == thID) return true;
+        }
+    }
+    return false;
+}
+#endif
