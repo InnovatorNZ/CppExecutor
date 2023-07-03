@@ -27,7 +27,7 @@ private:
     const long keepAliveTime;
     RejectedExecutionHandler* rejectHandler;
     std::atomic<int> thread_cnt;
-    std::atomic<int> working_cnt;
+    int working_cnt;
     std::condition_variable complete_condition;
     std::mutex finish_mutex;
     std::vector<std::thread> threads_;

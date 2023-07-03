@@ -74,12 +74,12 @@ ThreadPoolExecutor::~ThreadPoolExecutor() {
 std::function<void()> ThreadPoolExecutor::createCoreThread(const std::function<void()>& firstTask) {
     return [this, firstTask] {
         if (firstTask != nullptr) {
+            std::unique_lock<std::mutex> finish_lock(finish_mutex);
             working_cnt++;
+            finish_lock.unlock();
             firstTask();
-            {
-                std::unique_lock<std::mutex> lock(finish_mutex);
-                working_cnt--;
-            }
+            finish_lock.lock();
+            working_cnt--;
             complete_condition.notify_all();
         }
         while (true) {
@@ -88,12 +88,12 @@ std::function<void()> ThreadPoolExecutor::createCoreThread(const std::function<v
                 thread_cnt--;
                 return;
             }
+            std::unique_lock<std::mutex> finish_lock(finish_mutex);
             working_cnt++;
+            finish_lock.unlock();
             task();
-            {
-                std::unique_lock<std::mutex> lock(finish_mutex);
-                working_cnt--;
-            }
+            finish_lock.lock();
+            working_cnt--;
             complete_condition.notify_all();
         }
     };
