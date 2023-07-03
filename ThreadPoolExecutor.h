@@ -27,7 +27,7 @@ private:
     const long keepAliveTime;
     RejectedExecutionHandler* rejectHandler;
     std::atomic<int> thread_cnt;
-    int working_cnt;
+    int finished_cnt;
     std::condition_variable complete_condition;
     std::mutex finish_mutex;
     std::vector<std::thread> threads_;
@@ -75,7 +75,9 @@ public:
 
     bool isShutdown() const;
 
-    void waitForTaskComplete();
+    void waitForTaskComplete(int task_cnt);
+
+    void resetFinishedCount() { finished_cnt = 0; }
 
 #if _WIN32
     bool insidePool(DWORD);

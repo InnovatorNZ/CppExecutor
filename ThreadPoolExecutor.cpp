@@ -61,7 +61,7 @@ RejectedExecutionHandler* ThreadPoolExecutor::DiscardOldestPolicy = new ThreadPo
 ThreadPoolExecutor::ThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveTime,
                                        std::unique_ptr<BlockingQueue<std::function<void()> > > workQueue, RejectedExecutionHandler* rejectHandler) :
         corePoolSize(corePoolSize), maximumPoolSize(maximumPoolSize), keepAliveTime(keepAliveTime),
-        workQueue(std::move(workQueue)), rejectHandler(rejectHandler), thread_cnt(0), working_cnt(0), stop_(false) {
+        workQueue(std::move(workQueue)), rejectHandler(rejectHandler), thread_cnt(0), finished_cnt(0), stop_(false) {
 }
 
 ThreadPoolExecutor::~ThreadPoolExecutor() {
@@ -74,13 +74,12 @@ ThreadPoolExecutor::~ThreadPoolExecutor() {
 std::function<void()> ThreadPoolExecutor::createCoreThread(const std::function<void()>& firstTask) {
     return [this, firstTask] {
         if (firstTask != nullptr) {
-            std::unique_lock<std::mutex> finish_lock(finish_mutex);
-            working_cnt++;
-            finish_lock.unlock();
             firstTask();
-            finish_lock.lock();
-            working_cnt--;
-            complete_condition.notify_all();
+            {
+                std::unique_lock<std::mutex> lock(finish_mutex);
+                finished_cnt++;
+                complete_condition.notify_all();
+            }
         }
         while (true) {
             auto task = workQueue->take();
@@ -88,13 +87,12 @@ std::function<void()> ThreadPoolExecutor::createCoreThread(const std::function<v
                 thread_cnt--;
                 return;
             }
-            std::unique_lock<std::mutex> finish_lock(finish_mutex);
-            working_cnt++;
-            finish_lock.unlock();
             task();
-            finish_lock.lock();
-            working_cnt--;
-            complete_condition.notify_all();
+            {
+                std::unique_lock<std::mutex> lock(finish_mutex);
+                finished_cnt++;
+                complete_condition.notify_all();
+            }
         }
     };
 }
@@ -102,13 +100,12 @@ std::function<void()> ThreadPoolExecutor::createCoreThread(const std::function<v
 std::function<void()> ThreadPoolExecutor::createTempThread(const std::function<void()>& firstTask) {
     return [this, firstTask] {
         if (firstTask != nullptr) {
-            working_cnt++;
             firstTask();
             {
                 std::unique_lock<std::mutex> lock(finish_mutex);
-                working_cnt--;
+                finished_cnt++;
+                complete_condition.notify_all();
             }
-            complete_condition.notify_all();
         }
         while (true) {
             auto task = workQueue->poll(keepAliveTime);
@@ -117,23 +114,24 @@ std::function<void()> ThreadPoolExecutor::createTempThread(const std::function<v
                 std::clog << "Temp thread exited." << std::endl;
                 return;
             }
-            working_cnt++;
             task();
             {
                 std::unique_lock<std::mutex> lock(finish_mutex);
-                working_cnt--;
+                finished_cnt++;
+                complete_condition.notify_all();
             }
-            complete_condition.notify_all();
         }
     };
 }
 
-void ThreadPoolExecutor::waitForTaskComplete() {
+void ThreadPoolExecutor::waitForTaskComplete(int task_cnt) {
     std::this_thread::yield();
+    auto task_finished = [this, task_cnt] { return finished_cnt == task_cnt && workQueue->empty(); };
     while (true) {
         std::unique_lock<std::mutex> lock(finish_mutex);
-        this->complete_condition.wait(lock, [this] { return working_cnt == 0 && workQueue->empty(); });
-        if (working_cnt == 0 && workQueue->empty()) {
+        this->complete_condition.wait(lock, task_finished);
+        if (task_finished()) {
+            finished_cnt = 0;
             return;
         }
     }
