@@ -74,7 +74,7 @@ int main() {
                 if (!Test::check(pool)) cerr << "ERROR: BUG DETECTED!" << endl;
                 // __sleep(0.2);
             }
-            pool.waitForTaskComplete();
+            pool.waitForTaskComplete(6);
         }
     }
     return 0;
