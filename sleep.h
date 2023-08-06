@@ -1,5 +1,4 @@
-#ifndef CPPEXECUTOR_SLEEP_H
-#define CPPEXECUTOR_SLEEP_H
+#pragma once
 
 #if _WIN32
 
@@ -18,4 +17,3 @@ void __sleep(float sec) {
 }
 
 #endif
-#endif //CPPEXECUTOR_SLEEP_H
