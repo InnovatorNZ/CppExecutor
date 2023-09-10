@@ -20,7 +20,7 @@ class RejectedExecutionException;
 class RejectedExecutionHandler;
 
 class ThreadPoolExecutor {
-    friend class Test;
+    friend class ThreadPoolTest;
 
 private:
     const int corePoolSize, maximumPoolSize;

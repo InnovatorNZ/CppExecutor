@@ -1,9 +1,9 @@
-#ifndef CPPEXECUTOR_TEST_H
-#define CPPEXECUTOR_TEST_H
+#ifndef CPPEXECUTOR_THREADPOOLTEST_H
+#define CPPEXECUTOR_THREADPOOLTEST_H
 
 #include "ThreadPoolExecutor.h"
 
-class Test {
+class ThreadPoolTest {
 public:
     static bool check(const ThreadPoolExecutor& e) {
         return e.thread_cnt <= e.maximumPoolSize &&
@@ -11,4 +11,4 @@ public:
     }
 };
 
-#endif //CPPEXECUTOR_TEST_H
+#endif //CPPEXECUTOR_THREADPOOLTEST_H

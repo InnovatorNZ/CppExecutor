@@ -2,9 +2,25 @@
 #include <random>
 #include "ThreadPoolExecutor.h"
 #include "ArrayBlockingQueue.h"
-#include "sleep.h"
-#include "Test.h"
+#include "ThreadPoolTest.h"
 
+#if _WIN32
+
+#include <Windows.h>
+
+void __sleep(float sec) {
+    Sleep(sec * 1000);
+}
+
+#else
+
+#include <unistd.h>
+
+void __sleep(float sec) {
+    usleep(sec * 1000 * 1000);
+}
+
+#endif
 using namespace std;
 
 int main() {
@@ -22,7 +38,7 @@ int main() {
                     __sleep(3);
                     cout << "End task " << i << endl;
                 });
-                if (!Test::check(pool)) cerr << "ERROR: BUG DETECTED!" << endl;
+                if (!ThreadPoolTest::check(pool)) cerr << "ERROR: BUG DETECTED!" << endl;
                 __sleep(0.5);
             }
             __sleep(9);
@@ -48,7 +64,7 @@ int main() {
                         __sleep(await_time);
                         cout << "End task (" << i << "," << j << ")" << endl;
                     });
-                    if (!Test::check(pool2)) cerr << "ERROR: BUG DETECTED!" << endl;
+                    if (!ThreadPoolTest::check(pool2)) cerr << "ERROR: BUG DETECTED!" << endl;
                     __sleep(0.25);
                 }
             });
@@ -71,7 +87,7 @@ int main() {
                     // __sleep(3);
                     cout << "End task " << j << endl;
                 });
-                if (!Test::check(pool)) cerr << "ERROR: BUG DETECTED!" << endl;
+                if (!ThreadPoolTest::check(pool)) cerr << "ERROR: BUG DETECTED!" << endl;
                 // __sleep(0.2);
             }
             pool.waitForTaskComplete(6);
