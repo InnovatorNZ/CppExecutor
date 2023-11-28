@@ -28,7 +28,7 @@ int main() {
         cout << "Single-thread test" << endl;
         ThreadPoolExecutor pool(2, 4, 3000,
                                 std::make_unique<ArrayBlockingQueue<std::function<void()> > >(2),
-                                ThreadPoolExecutor::DiscardOldestPolicy);
+                                std::make_unique<ThreadPoolExecutor::DiscardOldestPolicy>());
         __sleep(1);
         for (int _ = 0; _ < 2; _++) {
             for (int i = 0; i < 9; i++) {
@@ -48,9 +48,11 @@ int main() {
     {
         cout << "Multi-thread test" << endl;
         ThreadPoolExecutor pool1(15, 15, 0,
-                                 std::make_unique<ArrayBlockingQueue<std::function<void()> > >(0), ThreadPoolExecutor::DiscardPolicy);
+                                 std::make_unique<ArrayBlockingQueue<std::function<void()> > >(0),
+                                 std::make_unique<ThreadPoolExecutor::DiscardPolicy>());
         ThreadPoolExecutor pool2(32, 64, 200,
-                                 std::make_unique<ArrayBlockingQueue<std::function<void()> > >(6), ThreadPoolExecutor::DiscardPolicy);
+                                 std::make_unique<ArrayBlockingQueue<std::function<void()> > >(6),
+                                 std::make_unique<ThreadPoolExecutor::DiscardPolicy>());
         for (int i = 0; i < 15; i++) {
             pool1.execute([i, &pool2] {
                 std::mt19937 e(std::chrono::time_point_cast<std::chrono::milliseconds>(
@@ -77,7 +79,7 @@ int main() {
         cout << "Wait until test" << endl;
         ThreadPoolExecutor pool(2, 4, 3000,
                                 std::make_unique<ArrayBlockingQueue<std::function<void()> > >(2),
-                                ThreadPoolExecutor::DiscardOldestPolicy);
+                                std::make_unique<ThreadPoolExecutor::DiscardOldestPolicy>());
         __sleep(1);
         for (int i = 0; i < 3; i++) {
             for (int j = 0; j < 6; j++) {

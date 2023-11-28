@@ -17,7 +17,7 @@
 
 class RejectedExecutionException : public std::runtime_error {
 public:
-    RejectedExecutionException(const std::string&);
+    explicit RejectedExecutionException(const std::string&);
 };
 
 class ThreadPoolExecutor;
