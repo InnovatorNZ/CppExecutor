@@ -1,67 +1,35 @@
 #include "ThreadPoolExecutor.h"
 
-class RejectedExecutionException : public std::runtime_error {
-public:
-    RejectedExecutionException(const std::string& arg) : runtime_error(arg) {
-        std::cerr << arg << std::endl;
+RejectedExecutionException::RejectedExecutionException(const std::string& arg) : runtime_error(arg) {
+    std::cerr << arg << std::endl;
+}
+
+void ThreadPoolExecutor::AbortPolicy::rejectedExecution(const std::function<void()>& func, ThreadPoolExecutor* e) {
+    throw RejectedExecutionException("Task rejected!");
+}
+
+void ThreadPoolExecutor::DiscardPolicy::rejectedExecution(const std::function<void()>& func, ThreadPoolExecutor* e) {
+    std::cerr << "Task rejected!" << std::endl;
+}
+
+void ThreadPoolExecutor::DiscardOldestPolicy::rejectedExecution(const std::function<void()>& func, ThreadPoolExecutor* e) {
+    if (!e->isShutdown()) {
+        e->workQueue->poll();
+        e->workQueue->put(func);
     }
-};
+}
 
-class RejectedExecutionHandler {
-public:
-    virtual void rejectedExecution(const std::function<void()>& func, ThreadPoolExecutor* e) = 0;
-};
-
-class ThreadPoolExecutor::AbortPolicy_ : public RejectedExecutionHandler {
-public:
-    AbortPolicy_() = default;
-
-    void rejectedExecution(const std::function<void()>& func, ThreadPoolExecutor* e) override {
-        throw RejectedExecutionException("Task rejected!");
+void ThreadPoolExecutor::CallerRunsPolicy::rejectedExecution(const std::function<void()>& func, ThreadPoolExecutor* e) {
+    if (!e->isShutdown()) {
+        func();
     }
-};
-
-class ThreadPoolExecutor::DiscardPolicy_ : public RejectedExecutionHandler {
-public:
-    DiscardPolicy_() = default;
-
-    void rejectedExecution(const std::function<void()>& func, ThreadPoolExecutor* e) override {
-        std::cerr << "Task rejected!" << std::endl;
-    }
-};
-
-class ThreadPoolExecutor::DiscardOldestPolicy_ : public RejectedExecutionHandler {
-public:
-    DiscardOldestPolicy_() = default;
-
-    void rejectedExecution(const std::function<void()>& func, ThreadPoolExecutor* e) override {
-        if (!e->isShutdown()) {
-            e->workQueue->poll();
-            e->workQueue->put(func);
-        }
-    }
-};
-
-class ThreadPoolExecutor::CallerRunsPolicy_ : public RejectedExecutionHandler {
-public:
-    CallerRunsPolicy_() = default;
-
-    void rejectedExecution(const std::function<void()>& func, ThreadPoolExecutor* e) override {
-        if (!e->isShutdown()) {
-            func();
-        }
-    }
-};
-
-RejectedExecutionHandler* ThreadPoolExecutor::AbortPolicy = new ThreadPoolExecutor::AbortPolicy_();
-RejectedExecutionHandler* ThreadPoolExecutor::DiscardPolicy = new ThreadPoolExecutor::DiscardPolicy_();
-RejectedExecutionHandler* ThreadPoolExecutor::CallerRunsPolicy = new ThreadPoolExecutor::CallerRunsPolicy_();
-RejectedExecutionHandler* ThreadPoolExecutor::DiscardOldestPolicy = new ThreadPoolExecutor::DiscardOldestPolicy_();
+}
 
 ThreadPoolExecutor::ThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveTime,
-                                       std::unique_ptr<BlockingQueue<std::function<void()> > > workQueue, RejectedExecutionHandler* rejectHandler) :
+                                       std::unique_ptr<BlockingQueue<std::function<void()> > > workQueue, 
+                                       std::unique_ptr<RejectedExecutionHandler> rejectHandler) :
         corePoolSize(corePoolSize), maximumPoolSize(maximumPoolSize), keepAliveTime(keepAliveTime),
-        workQueue(std::move(workQueue)), rejectHandler(rejectHandler), thread_cnt(0), finished_cnt(0), stop_(false) {
+        workQueue(std::move(workQueue)), rejectHandler(std::move(rejectHandler)), thread_cnt(0), finished_cnt(0), stop_(false) {
 }
 
 ThreadPoolExecutor::~ThreadPoolExecutor() {
@@ -181,6 +149,11 @@ void ThreadPoolExecutor::enqueue(const std::function<void()>& task) {
 
 void ThreadPoolExecutor::reject(const std::function<void()>& task) {
     rejectHandler->rejectedExecution(task, this);
+    {
+        std::unique_lock<std::mutex> lock(finish_mutex);
+        finished_cnt++;
+        complete_condition.notify_all();
+    }
 }
 
 bool ThreadPoolExecutor::isShutdown() const {

@@ -15,9 +15,21 @@
 #include <Windows.h>
 #endif
 
-class RejectedExecutionException;
+class RejectedExecutionException : public std::runtime_error {
+public:
+    RejectedExecutionException(const std::string&);
+};
 
-class RejectedExecutionHandler;
+class ThreadPoolExecutor;
+
+class RejectedExecutionHandler {
+public:
+    RejectedExecutionHandler() = default;
+
+    virtual void rejectedExecution(const std::function<void()>& func, ThreadPoolExecutor* e) = 0;
+
+    virtual ~RejectedExecutionHandler() = default;
+};
 
 class ThreadPoolExecutor {
     friend class ThreadPoolTest;
@@ -25,30 +37,36 @@ class ThreadPoolExecutor {
 private:
     const int corePoolSize, maximumPoolSize;
     const long keepAliveTime;
-    RejectedExecutionHandler* rejectHandler;
+    std::unique_ptr<BlockingQueue<std::function<void()> > > workQueue;
+    std::unique_ptr<RejectedExecutionHandler> rejectHandler;
     std::atomic<int> thread_cnt;
     int finished_cnt;
     std::condition_variable complete_condition;
     std::mutex finish_mutex;
     std::vector<std::thread> threads_;
     std::mutex thread_lock;
-    std::unique_ptr<BlockingQueue<std::function<void()> > > workQueue;
-    bool stop_;
-
-private:
-    class AbortPolicy_;
-
-    class DiscardPolicy_;
-
-    class DiscardOldestPolicy_;
-
-    class CallerRunsPolicy_;
+    volatile bool stop_;
 
 public:
-    static RejectedExecutionHandler* AbortPolicy;
-    static RejectedExecutionHandler* DiscardPolicy;
-    static RejectedExecutionHandler* CallerRunsPolicy;
-    static RejectedExecutionHandler* DiscardOldestPolicy;
+    class AbortPolicy : public RejectedExecutionHandler {
+    public:
+        void rejectedExecution(const std::function<void()>& func, ThreadPoolExecutor* e) override;
+    };
+
+    class DiscardPolicy : public RejectedExecutionHandler {
+    public:
+        void rejectedExecution(const std::function<void()>& func, ThreadPoolExecutor* e) override;
+    };
+
+    class DiscardOldestPolicy : public RejectedExecutionHandler {
+    public:
+        void rejectedExecution(const std::function<void()>& func, ThreadPoolExecutor* e) override;
+    };
+
+    class CallerRunsPolicy : public RejectedExecutionHandler {
+    public:
+        void rejectedExecution(const std::function<void()>& func, ThreadPoolExecutor* e) override;
+    };
 
 private:
     std::function<void()> createCoreThread(const std::function<void()>& firstTask);
@@ -63,7 +81,8 @@ private:
 
 public:
     ThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveTime,
-                       std::unique_ptr<BlockingQueue<std::function<void()> > > workQueue, RejectedExecutionHandler* rejectHandler);
+                       std::unique_ptr<BlockingQueue<std::function<void()> > > workQueue,
+                       std::unique_ptr<RejectedExecutionHandler> rejectHandler);
 
     ~ThreadPoolExecutor();
 
