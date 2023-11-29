@@ -43,11 +43,7 @@ std::function<void()> ThreadPoolExecutor::createCoreThread(const std::function<v
     return [this, firstTask] {
         if (firstTask != nullptr) {
             firstTask();
-            {
-                std::unique_lock<std::mutex> lock(finish_mutex);
-                finished_cnt++;
-                complete_condition.notify_all();
-            }
+            increaseFinishedCount();
         }
         while (true) {
             auto task = workQueue->take();
@@ -56,11 +52,7 @@ std::function<void()> ThreadPoolExecutor::createCoreThread(const std::function<v
                 return;
             }
             task();
-            {
-                std::unique_lock<std::mutex> lock(finish_mutex);
-                finished_cnt++;
-                complete_condition.notify_all();
-            }
+            increaseFinishedCount();
         }
     };
 }
@@ -69,11 +61,7 @@ std::function<void()> ThreadPoolExecutor::createTempThread(const std::function<v
     return [this, firstTask] {
         if (firstTask != nullptr) {
             firstTask();
-            {
-                std::unique_lock<std::mutex> lock(finish_mutex);
-                finished_cnt++;
-                complete_condition.notify_all();
-            }
+            increaseFinishedCount();
         }
         while (true) {
             auto task = workQueue->poll(keepAliveTime);
@@ -83,11 +71,7 @@ std::function<void()> ThreadPoolExecutor::createTempThread(const std::function<v
                 return;
             }
             task();
-            {
-                std::unique_lock<std::mutex> lock(finish_mutex);
-                finished_cnt++;
-                complete_condition.notify_all();
-            }
+            increaseFinishedCount();
         }
     };
 }
@@ -149,11 +133,13 @@ void ThreadPoolExecutor::enqueue(const std::function<void()>& task) {
 
 void ThreadPoolExecutor::reject(const std::function<void()>& task) {
     rejectHandler->rejectedExecution(task, this);
-    {
-        std::unique_lock<std::mutex> lock(finish_mutex);
-        finished_cnt++;
-        complete_condition.notify_all();
-    }
+    increaseFinishedCount();
+}
+
+void ThreadPoolExecutor::increaseFinishedCount() {
+    std::unique_lock<std::mutex> lock(finish_mutex);
+    finished_cnt++;
+    complete_condition.notify_all();
 }
 
 bool ThreadPoolExecutor::isShutdown() const {

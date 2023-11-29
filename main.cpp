@@ -35,7 +35,7 @@ int main() {
                 cout << "Enqueue task " << i << endl;
                 pool.execute([i] {
                     cout << "Begin task " << i << endl;
-                    __sleep(3);
+                    __sleep(4);
                     cout << "End task " << i << endl;
                 });
                 if (!ThreadPoolTest::check(pool)) cerr << "ERROR: BUG DETECTED!" << endl;

@@ -79,6 +79,8 @@ private:
 
     void reject(const std::function<void()>& task);
 
+    void increaseFinishedCount();
+
 public:
     ThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveTime,
                        std::unique_ptr<BlockingQueue<std::function<void()> > > workQueue,
