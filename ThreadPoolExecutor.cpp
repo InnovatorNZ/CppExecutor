@@ -1,79 +1,52 @@
 #include "ThreadPoolExecutor.h"
 
-class RejectedExecutionException : public std::runtime_error {
-public:
-    RejectedExecutionException(const std::string& arg) : runtime_error(arg) {
-        std::cerr << arg << std::endl;
+RejectedExecutionException::RejectedExecutionException(const std::string& arg) : runtime_error(arg) {
+    std::cerr << arg << std::endl;
+}
+
+void ThreadPoolExecutor::AbortPolicy::rejectedExecution(const std::function<void()>& func, ThreadPoolExecutor* e) {
+    throw RejectedExecutionException("Task rejected!");
+}
+
+void ThreadPoolExecutor::DiscardPolicy::rejectedExecution(const std::function<void()>& func, ThreadPoolExecutor* e) {
+    std::cerr << "Task rejected!" << std::endl;
+}
+
+void ThreadPoolExecutor::DiscardOldestPolicy::rejectedExecution(const std::function<void()>& func, ThreadPoolExecutor* e) {
+    if (!e->isShutdown()) {
+        e->workQueue->poll();
+        e->workQueue->put(func);
     }
-};
+}
 
-class RejectedExecutionHandler {
-public:
-    virtual void rejectedExecution(const std::function<void()>& func, ThreadPoolExecutor* e) = 0;
-};
-
-class ThreadPoolExecutor::AbortPolicy_ : public RejectedExecutionHandler {
-public:
-    AbortPolicy_() = default;
-
-    void rejectedExecution(const std::function<void()>& func, ThreadPoolExecutor* e) override {
-        throw RejectedExecutionException("Task rejected!");
+void ThreadPoolExecutor::CallerRunsPolicy::rejectedExecution(const std::function<void()>& func, ThreadPoolExecutor* e) {
+    if (!e->isShutdown()) {
+        func();
     }
-};
-
-class ThreadPoolExecutor::DiscardPolicy_ : public RejectedExecutionHandler {
-public:
-    DiscardPolicy_() = default;
-
-    void rejectedExecution(const std::function<void()>& func, ThreadPoolExecutor* e) override {
-        std::cerr << "Task rejected!" << std::endl;
-    }
-};
-
-class ThreadPoolExecutor::DiscardOldestPolicy_ : public RejectedExecutionHandler {
-public:
-    DiscardOldestPolicy_() = default;
-
-    void rejectedExecution(const std::function<void()>& func, ThreadPoolExecutor* e) override {
-        if (!e->isShutdown()) {
-            e->workQueue->poll();
-            e->workQueue->put(func);
-        }
-    }
-};
-
-class ThreadPoolExecutor::CallerRunsPolicy_ : public RejectedExecutionHandler {
-public:
-    CallerRunsPolicy_() = default;
-
-    void rejectedExecution(const std::function<void()>& func, ThreadPoolExecutor* e) override {
-        if (!e->isShutdown()) {
-            func();
-        }
-    }
-};
-
-RejectedExecutionHandler* ThreadPoolExecutor::AbortPolicy = new ThreadPoolExecutor::AbortPolicy_();
-RejectedExecutionHandler* ThreadPoolExecutor::DiscardPolicy = new ThreadPoolExecutor::DiscardPolicy_();
-RejectedExecutionHandler* ThreadPoolExecutor::CallerRunsPolicy = new ThreadPoolExecutor::CallerRunsPolicy_();
-RejectedExecutionHandler* ThreadPoolExecutor::DiscardOldestPolicy = new ThreadPoolExecutor::DiscardOldestPolicy_();
+}
 
 ThreadPoolExecutor::ThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveTime,
-                                       std::unique_ptr<BlockingQueue<std::function<void()> > > workQueue, RejectedExecutionHandler* rejectHandler) :
+                                       std::unique_ptr<BlockingQueue<std::function<void()> > > workQueue, 
+                                       std::unique_ptr<RejectedExecutionHandler> rejectHandler,
+                                       bool enableWaitComplete) :
         corePoolSize(corePoolSize), maximumPoolSize(maximumPoolSize), keepAliveTime(keepAliveTime),
-        workQueue(std::move(workQueue)), rejectHandler(rejectHandler), thread_cnt(0), stop_(false) {
+        workQueue(std::move(workQueue)), rejectHandler(std::move(rejectHandler)),
+        thread_cnt(0), finished_cnt(0), stop_(false), enableWaitComplete(enableWaitComplete) {
 }
 
 ThreadPoolExecutor::~ThreadPoolExecutor() {
     stop_ = true;
     workQueue->close();
-    for (std::thread& worker: threads_)
+    for (std::thread& worker : threads_)
         worker.join();
 }
 
 std::function<void()> ThreadPoolExecutor::createCoreThread(const std::function<void()>& firstTask) {
     return [this, firstTask] {
-        firstTask();
+        if (firstTask != nullptr) {
+            firstTask();
+            increaseFinishedCount();
+        }
         while (true) {
             auto task = workQueue->take();
             if (stop_ || task == nullptr) {
@@ -81,13 +54,17 @@ std::function<void()> ThreadPoolExecutor::createCoreThread(const std::function<v
                 return;
             }
             task();
+            increaseFinishedCount();
         }
     };
 }
 
 std::function<void()> ThreadPoolExecutor::createTempThread(const std::function<void()>& firstTask) {
     return [this, firstTask] {
-        firstTask();
+        if (firstTask != nullptr) {
+            firstTask();
+            increaseFinishedCount();
+        }
         while (true) {
             auto task = workQueue->poll(keepAliveTime);
             if (stop_ || task == nullptr) {
@@ -96,8 +73,25 @@ std::function<void()> ThreadPoolExecutor::createTempThread(const std::function<v
                 return;
             }
             task();
+            increaseFinishedCount();
         }
     };
+}
+
+void ThreadPoolExecutor::waitForTaskComplete(int task_cnt) {
+    if (!enableWaitComplete)
+        throw std::invalid_argument("Wait complete is not enabled");
+
+    std::this_thread::yield();
+    auto task_finished = [this, task_cnt] { return finished_cnt == task_cnt && workQueue->empty(); };
+    while (true) {
+        std::unique_lock<std::mutex> lock(finish_mutex);
+        this->complete_condition.wait(lock, task_finished);
+        if (task_finished()) {
+            finished_cnt = 0;
+            return;
+        }
+    }
 }
 
 bool ThreadPoolExecutor::addWorker(bool core, const std::function<void()>& firstTask) {
@@ -144,8 +138,28 @@ void ThreadPoolExecutor::enqueue(const std::function<void()>& task) {
 
 void ThreadPoolExecutor::reject(const std::function<void()>& task) {
     rejectHandler->rejectedExecution(task, this);
+    increaseFinishedCount();
+}
+
+void ThreadPoolExecutor::increaseFinishedCount() {
+    if (!enableWaitComplete) return;
+    std::unique_lock<std::mutex> lock(finish_mutex);
+    finished_cnt++;
+    complete_condition.notify_all();
 }
 
 bool ThreadPoolExecutor::isShutdown() const {
     return this->stop_;
 }
+
+#if _WIN32
+bool ThreadPoolExecutor::insidePool(DWORD thID) {
+    for (int i = 0; i < threads_.size(); i++) {
+        if (threads_[i].joinable()) {
+            DWORD cthId = ::GetThreadId(static_cast<HANDLE>(threads_[i].native_handle()));
+            if (cthId == thID) return true;
+        }
+    }
+    return false;
+}
+#endif
