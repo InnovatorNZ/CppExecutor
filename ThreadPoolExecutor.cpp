@@ -27,9 +27,11 @@ void ThreadPoolExecutor::CallerRunsPolicy::rejectedExecution(const std::function
 
 ThreadPoolExecutor::ThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveTime,
                                        std::unique_ptr<BlockingQueue<std::function<void()> > > workQueue, 
-                                       std::unique_ptr<RejectedExecutionHandler> rejectHandler) :
+                                       std::unique_ptr<RejectedExecutionHandler> rejectHandler,
+                                       bool enableWaitComplete) :
         corePoolSize(corePoolSize), maximumPoolSize(maximumPoolSize), keepAliveTime(keepAliveTime),
-        workQueue(std::move(workQueue)), rejectHandler(std::move(rejectHandler)), thread_cnt(0), finished_cnt(0), stop_(false) {
+        workQueue(std::move(workQueue)), rejectHandler(std::move(rejectHandler)),
+        thread_cnt(0), finished_cnt(0), stop_(false), enableWaitComplete(enableWaitComplete) {
 }
 
 ThreadPoolExecutor::~ThreadPoolExecutor() {
@@ -77,6 +79,9 @@ std::function<void()> ThreadPoolExecutor::createTempThread(const std::function<v
 }
 
 void ThreadPoolExecutor::waitForTaskComplete(int task_cnt) {
+    if (!enableWaitComplete)
+        throw std::invalid_argument("Wait complete is not enabled");
+
     std::this_thread::yield();
     auto task_finished = [this, task_cnt] { return finished_cnt == task_cnt && workQueue->empty(); };
     while (true) {
@@ -137,6 +142,7 @@ void ThreadPoolExecutor::reject(const std::function<void()>& task) {
 }
 
 void ThreadPoolExecutor::increaseFinishedCount() {
+    if (!enableWaitComplete) return;
     std::unique_lock<std::mutex> lock(finish_mutex);
     finished_cnt++;
     complete_condition.notify_all();

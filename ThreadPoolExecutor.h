@@ -46,6 +46,7 @@ private:
     std::vector<std::thread> threads_;
     std::mutex thread_lock;
     volatile bool stop_;
+    const bool enableWaitComplete;
 
 public:
     class AbortPolicy : public RejectedExecutionHandler {
@@ -84,7 +85,8 @@ private:
 public:
     ThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveTime,
                        std::unique_ptr<BlockingQueue<std::function<void()> > > workQueue,
-                       std::unique_ptr<RejectedExecutionHandler> rejectHandler);
+                       std::unique_ptr<RejectedExecutionHandler> rejectHandler,
+                       bool enableWaitComplete = false);
 
     ~ThreadPoolExecutor();
 

@@ -79,7 +79,7 @@ int main() {
         cout << "Wait until test" << endl;
         ThreadPoolExecutor pool(2, 4, 3000,
                                 std::make_unique<ArrayBlockingQueue<std::function<void()> > >(2),
-                                std::make_unique<ThreadPoolExecutor::DiscardOldestPolicy>());
+                                std::make_unique<ThreadPoolExecutor::DiscardOldestPolicy>(), true);
         __sleep(1);
         for (int i = 0; i < 3; i++) {
             for (int j = 0; j < 6; j++) {
